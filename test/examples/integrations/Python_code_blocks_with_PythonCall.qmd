@@ -1,0 +1,33 @@
+---
+title: Python code blocks with PythonCall
+fig-width: 4
+fig-height: 3
+fig-dpi: 150
+fig-format: png
+julia:
+    exeflags: ["--project=PythonCall"]
+---
+
+This is a python code block but PyCall has not been made available in the session, yet, so it will fail.
+
+```{python}
+x = 1
+```
+
+Here we make PythonCall available, `import PythonCall` would also work
+
+```{julia}
+using PythonCall
+
+x = 123
+```
+
+This is python code accessing a variable from Julia
+
+```{python}
+a = 5 * 1
+a
+```
+
+Here we have a plot in python with a more complex interpolation
+
