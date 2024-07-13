@@ -318,7 +318,7 @@ function raw_markdown_chunks_from_string(path::String, markdown::String)
     terminal_line = 1
     code_cells = false
     for (node, enter) in ast
-        if enter && (is_julia_toplevel(node) || is_r_toplevel(node))
+        if enter && (is_julia_toplevel(node) || is_r_toplevel(node) || is_python_toplevel(node))
             code_cells = true
             line = node.sourcepos[1][1]
             md = join(source_lines[terminal_line:(line-1)], "\n")
@@ -339,10 +339,13 @@ function raw_markdown_chunks_from_string(path::String, markdown::String)
                     "Cannot handle an `eval` code cell option with value $(repr(evaluate)), only true or false.",
                 )
             end
-            language =
+            @show node.t
+            language = 
                 is_julia_toplevel(node) ? :julia :
-                is_r_toplevel(node) ? :r : error("Unhandled code block language")
-            push!(
+                is_r_toplevel(node) ? :r :
+                is_python_toplevel(node) ? :python : error("Unhandled code block language")
+                @show language
+                            push!(
                 raw_chunks,
                 (
                     type = :code,
@@ -747,8 +750,7 @@ function evaluate_raw_cells!(
                     end
 
                     cell_options = expand_cell ? remote.cell_options : Dict()
-
-                    if chunk.language === :r
+                    if chunk.language !== :julia
                         # Code cells always get the language of the notebook assigned, in this case julia,
                         # so to render an R formatted cell, we need to do a workaround. We push a cell before
                         # the actual code cell which contains a plain markdown block that wraps the code in ```r
@@ -764,7 +766,7 @@ function evaluate_raw_cells!(
                                 metadata = (;),
                                 source = process_cell_source(
                                     """
-           ```r
+           ```$(chunk.language)
            $(strip_cell_options(chunk.source))
            ```
            """,
@@ -916,11 +918,32 @@ function wrap_with_r_boilerplate(code)
     """
 end
 
+function wrap_with_python_boilerplate(code)
+    @show code
+    pystring = 
+
+    str = """
+    @isdefined(PythonCall) &&
+    PythonCall isa Module &&
+    Base.PkgId(PythonCall).uuid == Base.UUID("6099a3de-0909-46bc-b1f4-468b9a2dfc0d") ||
+    error("PythonCall must be imported to execute R code cells with QuartoNotebookRunner")
+
+    PythonCall.@pyexec(`
+    $(strip(code, '\n')),
+    \"\"\", 
+    Main)
+    """
+    @show str
+    str
+end
+
 function transform_source(chunk)
     if chunk.language === :julia
         chunk.source
     elseif chunk.language === :r
         wrap_with_r_boilerplate(chunk.source)
+    elseif chunk.language === :python
+        wrap_with_python_boilerplate(chunk.source)
     else
         error("Unhandled code chunk language $(chunk.language)")
     end
@@ -1055,6 +1078,11 @@ is_julia_toplevel(node) =
 is_r_toplevel(node) =
     node.t isa CommonMark.CodeBlock &&
     node.t.info == "{r}" &&
+    node.parent.t isa CommonMark.Document
+
+is_python_toplevel(node) =
+    node.t isa CommonMark.CodeBlock &&
+    node.t.info == "{python}" &&
     node.parent.t isa CommonMark.Document
 
 function run!(
